@@ -1,35 +1,58 @@
 #!/bin/bash
+#
+# User Management Script
+# Creates user and group if they don't exist
+# Usage: sudo ./create_user.sh
 
-# Variables
+set -e  # Exit on error
+
+# Configuration
 USERNAME="Abdi"
 GROUPNAME="Hamed"
+LOG_FILE="/var/log/user_management.log"
 
-# Check if group exists
-if grep -q "^${GROUPNAME}:" /etc/group; then
-    echo "Group '${GROUPNAME}' already exists."
-else
-    echo "Group '${GROUPNAME}' does not exist. Creating it now..."
-    sudo groupadd "$GROUPNAME"
-    echo "Group '${GROUPNAME}' created successfully."
+# Logging function
+log_message() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+    log_message "ERROR: This script must be run as root"
+    exit 1
 fi
 
-# Check if user exists
-if id -u "$USERNAME" &>/dev/null; then
-    echo "User '${USERNAME}' already exists."
+log_message "Starting user management script"
+
+# Create group if it doesn't exist
+if getent group "$GROUPNAME" > /dev/null; then
+    log_message "INFO: Group '$GROUPNAME' already exists"
 else
-    echo "User '${USERNAME}' does not exist. Creating it now..."
-    sudo useradd -m -g "$GROUPNAME" "$USERNAME"
-    echo "User '${USERNAME}' created and added to group '${GROUPNAME}'."
+    log_message "INFO: Creating group '$GROUPNAME'"
+    groupadd "$GROUPNAME" && log_message "SUCCESS: Group '$GROUPNAME' created"
 fi
 
-# Display user information
+# Create user if it doesn't exist
+if id "$USERNAME" &>/dev/null; then
+    log_message "INFO: User '$USERNAME' already exists"
+else
+    log_message "INFO: Creating user '$USERNAME'"
+    useradd -m -g "$GROUPNAME" -s /bin/bash "$USERNAME" && \
+    log_message "SUCCESS: User '$USERNAME' created and added to group '$GROUPNAME'"
+    
+    # Set initial password (user should change on first login)
+    echo "$USERNAME:${USERNAME}123" | chpasswd
+    chage -d 0 "$USERNAME"  # Force password change on first login
+fi
+
+# Display verification
+echo "=== Verification ==="
 echo "User Information:"
 id "$USERNAME"
-
-# Display group information
-echo "Group Information:"
+echo -e "\nGroup Information:"
 getent group "$GROUPNAME"
+echo -e "\nHome Directory Contents:"
+ls -la "/home/$USERNAME/"
 
-
-
-
+log_message "User management completed successfully"
+exit 0
